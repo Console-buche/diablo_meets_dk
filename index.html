@@ -1,0 +1,896 @@
+<html>
+  <head>
+    <title>Diablo 2 - The Shaman's Order</title>
+    <style>
+      html {
+        cursor: url("sprites/cursor.gif"), auto;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      canvas {
+        width: 100%;
+        height: 100%;
+        position: absolute;
+        top: 0;
+      }
+
+      #tLifebar {
+        position: relative;
+        width: 150px;
+        height: 30px;
+        top: 15px;
+        left: calc(50% - 75px);
+        z-index: 5;
+        background: rgba(0, 0, 0, 0.95);
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #tHp {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        background: rgba(80, 20, 20, 0.95);
+      }
+
+      #tName {
+        position: absolute;
+        text-align: center;
+        height: 30px;
+        width: 100%;
+        line-height: 30px;
+        letter-spacing: 1.25px;
+        text-transform: capitalize;
+        color: rgb(160, 144, 111);
+      }
+    </style>
+  </head>
+
+  <body>
+    <audio id="ambientMusic">
+      <source src="sound/music/act1_town1.mp3" type="audio/mp3" />
+      Your browser does not support the audio element.
+    </audio>
+    <div id="tLifebar">
+      <div id="tHp"></div>
+      <div id="tName"></div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/103/three.js"></script>
+    <script type="module" src="./js/classes/Fallen.js"></script>
+    <script id="vertexShader" type="x-shader/x-vertex">
+      varying vec2 vUv_base;
+      	varying vec3 thisP;
+      	varying vec3 thisPP;
+
+      	void main() {
+
+      		vUv_base = uv * 3.0 ;	//ATTENTION : le zoom factor doit être répercuté en offset dans le frag, pour recentrer les textures
+
+
+
+      		//thisP = vec3(position.x, position.y, position.z);
+
+      		gl_Position =   projectionMatrix *
+      						modelViewMatrix *
+      						vec4(position,1.0);
+
+      		thisPP = vec3(modelViewMatrix*vec4(position, 1.0)).xyz;
+      		thisP = vec3(modelViewMatrix*vec4(position, 1.0)).xyz;
+
+      	}
+    </script>
+    <script id="fragmentShader" type="x-shader/x-fragment">
+
+      	precision  mediump float;
+      	const int NOMBREMAXDEFALLENS = 15;
+      		uniform sampler2D mainGround;
+      		uniform sampler2D mainGround_rock;
+      		uniform sampler2D mainGround_rock2;
+      		uniform sampler2D mainGround_road;
+      		uniform sampler2D mainGround_sand1;
+      		uniform sampler2D mainGround_tpTop;
+      		uniform sampler2D mainGround_tpBot;
+      		uniform sampler2D mainGround_tpRight;
+      		uniform sampler2D mainGround_tpLeft;
+      		uniform vec3 minionPos;
+      		uniform int nbOfFallens;
+      		uniform vec3 fallensPos[10];
+
+      		varying vec2 vUv_base;
+
+
+      		varying vec3 thisP;
+      		varying vec3 thisPP;
+
+      		//from stackoverflow : https://stackoverflow.com/questions/2049582/how-to-determine-if-a-point-is-in-a-2d-triangle
+      		bool pointIsInTriangle(vec2 s, vec2 a, vec2 b, vec2 c){
+      			float as_x = s.x-a.x;
+      			float as_y = s.y-a.y;
+      			bool s_ab = (b.x-a.x)*as_y-(b.y-a.y)*as_x > 0.0;
+      			if((c.x-a.x)*as_y-(c.y-a.y)*as_x > 0.0 == s_ab) return false;
+      			if((c.x-b.x)*(s.y-b.y)-(c.y-b.y)*(s.x-b.x) > 0.0 != s_ab) return false;
+      			return true;
+      		}
+
+      		float circle(vec2 coords, float radius) {
+      			return smoothstep(0.0, radius, length(coords));
+      		}
+
+      		void main() {
+
+      			float speed = 115.0;
+      			vec2 speedFixer = vec2(speed, speed/2.0);
+
+      			vec2 vUv = fract(vec2(vUv_base.x/3.0 + minionPos.x / 3.0 / speedFixer.x, vUv_base.y/3.0 - minionPos.z/3.0/speedFixer.y)) * 3.12;
+      			//vec2 vUv = vec2(vUv_base.x/3.0 + minionPos.x / 3.0, vUv_base.y/3.0 - minionPos.z/3.0)*3.0;
+
+      			vec2 offsetFactor = vec2(1.06, 1.06); //31.5 for uv*64.0;
+      			//tile orientation :
+      			vec2 offset_verti = vec2(0, 160.0/128.0);
+      			vec2 offset_horiz = vec2(160.0/128.0, 0.0);
+      			vec2 offset_diag_botLeft_topRight = vec2(160.0/128.0, 160.0/128.0);
+      			vec2 offset_diag_topLeft_botRight = vec2(160.0/128.0, 160.0/128.0);
+
+
+      			vec2 diag = vec2(160.0/128.0, 160.0/128.0);
+
+
+      			vec4 mainGroundTex = vec4(0.0);
+
+
+      				float i = 0.0;
+      				float l = 0.0;
+      				float l2 = 0.5;
+      				float l3 = 1.0;
+      				float l4 = 1.5;
+      				float l5 = 2.0;
+      				float l6 = 2.5;
+      				float l7 = 3.0;
+      				float l8 = 3.5;
+
+
+      				vec2 diag_topR = vUv - diag.x*(l*0.5) - offset_verti*i;
+      				vec2 diag_topR2 = vUv - diag.x*(l2*0.5) - offset_verti*i;
+      				vec2 diag_topR3 = vUv - diag.x*(l3*0.5) - offset_verti*i;
+      				vec2 diag_topR4 = vUv - diag.x*(l4*0.5) - offset_verti*i;
+      				vec2 diag_topR5 = vUv - diag.x*(l5*0.5) - offset_verti*i;
+      				vec2 diag_topR6 = vUv - diag.x*(l6*0.5) - offset_verti*i;
+      				vec2 diag_topL = vUv - diag.x*(-l*0.5) - offset_verti*i;
+      				vec2 diag_topL2 = vUv - diag.x*(-l2*0.5) - offset_verti*i;
+      				vec2 diag_topL3 = vUv - diag.x*(-l3*0.5) - offset_verti*i;
+      				vec2 diag_topL4 = vUv - diag.x*(-l4*0.5) - offset_verti*i;
+      				vec2 diag_topL5 = vUv - diag.x*(-l5*0.5) - offset_verti*i;
+      				vec2 diag_topL6 = vUv - diag.x*(-l6*0.5) - offset_verti*i;
+
+      				vec2 diag_topR_x_2 = vUv - diag.x*(l4*0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x_1 = vUv - diag.x*(l3*0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x = vUv - diag.x*(l*0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x1 = vUv - diag.x*(l2*0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x2 = vUv - diag.x*(l2*-0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x3 = vUv - diag.x*(l3*-0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x4 = vUv - diag.x*(l4*-0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x51 = vUv - diag.x*(l5*-0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x62 = vUv - diag.x*(l6*-0.5) - offset_verti*i - offset_horiz * 0.5;
+      				vec2 diag_topR_x73 = vUv - diag.x*(l7*-0.5) - offset_verti*i - offset_horiz * 0.5;
+
+
+      				//CENTER + BOT 5 lanes
+      				vec2 diag_topR5_x10 = vUv - diag.x*(l6*-0.5) - offset_verti*i - offset_horiz * 2.5;
+
+
+
+
+      				//CENTER + BOT 4 lanes
+      				vec2 diag_topR4_x8 = vUv - diag.x*(l4*-0.5) - offset_verti*i - offset_horiz * 2.0;
+      				vec2 diag_topR4_x9 = vUv - diag.x*(l5*-0.5) - offset_verti*i - offset_horiz * 2.0;
+      				vec2 diag_topR4_x10 = vUv - diag.x*(l6*-0.5) - offset_verti*i - offset_horiz * 2.0;
+
+      				//CENTER + BOT 3 lanes
+      				vec2 diag_topR3_x5 = vUv - diag.x*(l2*-0.5) - offset_verti*i - offset_horiz * 1.5;
+      				vec2 diag_topR3_x6 = vUv - diag.x*(l3*-0.5) - offset_verti*i - offset_horiz * 1.5;
+      				vec2 diag_topR3_x7 = vUv - diag.x*(l3*-0.5) - offset_verti*i - offset_horiz * 1.5;
+      				vec2 diag_topR3_x8 = vUv - diag.x*(l4*-0.5) - offset_verti*i - offset_horiz * 1.5;
+      				vec2 diag_topR3_x9 = vUv - diag.x*(l5*-0.5) - offset_verti*i - offset_horiz * 1.5;
+      				vec2 diag_topR3_x10 = vUv - diag.x*(l6*-0.5) - offset_verti*i - offset_horiz * 1.5;
+
+
+      				//CENTER + BOT 2 lanes
+      				vec2 diag_topR_x5_1 = vUv - diag.x*(l2*0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x5 = vUv - diag.x*(l*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x6 = vUv - diag.x*(l2*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x7 = vUv - diag.x*(l3*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x8 = vUv - diag.x*(l4*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x9 = vUv - diag.x*(l5*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x10 = vUv - diag.x*(l6*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x11 = vUv - diag.x*(l7*-0.5) - offset_verti*i - offset_horiz;
+      				vec2 diag_topR_x12 = vUv - diag.x*(l8*-0.5) - offset_verti*i - offset_horiz;
+
+
+      				vec2 diag_topR_1_3 = vUv - diag.x*(l6*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topR_1_2 = vUv - diag.x*(l5*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topR_1 = vUv - diag.x*(l*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topR2_1 = vUv - diag.x*(l2*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topR3_1 = vUv - diag.x*(l3*0.5) - offset_verti*i + offset_horiz * 0.5 ;
+      				vec2 diag_topR4_1 = vUv - diag.x*(l4*0.5) - offset_verti*i + offset_horiz * 0.5 ;
+      				vec2 diag_topL_1 = vUv - diag.x*(-l2*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topL_2 = vUv - diag.x*(-l3*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topL_3 = vUv - diag.x*(-l4*0.5) - offset_verti*i + offset_horiz * 0.5;
+      				vec2 diag_topL_4 = vUv - diag.x*(-l5*0.5) - offset_verti*i + offset_horiz * 0.5;
+
+      				vec2 diag_topR_2_1 = vUv - diag.x*(l2*-0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR_2 = vUv - diag.x*(l*0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR2_2 = vUv - diag.x*(l2*0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR3_2 = vUv - diag.x*(l3*0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR4_2 = vUv - diag.x*(l4*0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR5_2 = vUv - diag.x*(l5*0.5) - offset_verti*i + offset_horiz;
+      				vec2 diag_topR6_2= vUv - diag.x*(l6*0.5) - offset_verti*i + offset_horiz;
+
+
+      				vec2 diag_topR4_2_0 = vUv - diag.x*(l6*0.5) - offset_verti*i + offset_horiz * 1.5;
+      				vec2 diag_topR4_2_1 = vUv - diag.x*(l5*0.5) - offset_verti*i + offset_horiz * 1.5;
+      				vec2 diag_topR4_2_2 = vUv - diag.x*(l4*0.5) - offset_verti*i + offset_horiz * 1.5;
+      				vec2 diag_topR4_3 = vUv - diag.x*(l3*0.5) - offset_verti*i + offset_horiz * 1.5;
+      				vec2 diag_topR4_4 = vUv - diag.x*(l2*0.5) - offset_verti*i + offset_horiz * 1.5;
+
+
+      				vec2 diag_topR5_2_0 = vUv - diag.x*(l6*0.5) - offset_verti*i + offset_horiz * 2.0;
+      				vec2 diag_topR5_2_1 = vUv - diag.x*(l5*0.5) - offset_verti*i + offset_horiz * 2.0;
+      				vec2 diag_topR5_2_2 = vUv - diag.x*(l4*0.5) - offset_verti*i + offset_horiz * 2.0;
+
+
+      				vec2 diag_topR6_0 = vUv - diag.x*(l6*0.5) - offset_verti*i + offset_horiz * 2.5;
+
+
+
+      				/*
+      				vec2 diag_topLeft = vUv + diag.x*((l-0.5)*0.5) - offset_verti*i + offset_horiz/2.0;
+      				vec2 diag_botLeft = vUv + diag.x*((l-0.5)*0.5) + offset_verti*i + offset_horiz/2.0;;
+      				*/
+
+
+      				//TODO : stop algorithm when top uv is reached
+
+      				//CENTER + BOT 5 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR5_x10 - offsetFactor);
+
+      				//CENTER + BOT 4 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_x8 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_x9 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_x10 - offsetFactor);
+
+
+      				//CENTER + BOT 3 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_x5 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_x6 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_x8 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_x9 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_tpRight, diag_topR3_x10 - offsetFactor);
+
+      				//CENTER + BOT 2 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x5_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x5 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x6 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topR_x7 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x8 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_tpTop, diag_topR_x9 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_tpLeft, diag_topR_x10 - offsetFactor);
+
+
+      				//CENTER + BOT 1 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock2, diag_topR_x3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x4 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topR_x51 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_x62 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topR_x73 - offsetFactor);
+
+
+      				//CENTER LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock2, diag_topR3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topR5 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR6 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topL2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topL3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topL4 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topL5 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topL6 - offsetFactor);
+
+      				//CENTER + TOP 1 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_1_3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_1_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topR2_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock, diag_topL_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topL_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topL_3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topL_4 - offsetFactor);
+
+      				//CENTER + TOP 2 LANE
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_2_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR2_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR3_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_rock2, diag_topR4_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_tpBot, diag_topR5_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_tpRight, diag_topR6_2 - offsetFactor);
+
+      				//CENTER + TOP 3 LANE (only 3 tiles long, near corner)
+      				mainGroundTex += texture2D(mainGround_tpLeft, diag_topR4_2_0 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_2_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_2_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_3 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR4_4 - offsetFactor);
+
+
+      				//CENTER + TOP 4 LANE (only 3 tiles long, near corner)
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR5_2_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR5_2_1 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR5_2_0 - offsetFactor);
+
+
+      				//CENTER + TOP 5 LANE (ONLY 1 tile => it's the top left corner)
+      				mainGroundTex += texture2D(mainGround_sand1, diag_topR6_0 - offsetFactor);
+
+
+      			/*
+      				mainGroundTex += texture2D(mainGround_road, diag_topR_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topR2_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topR3_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topL_2 - offsetFactor);
+      				mainGroundTex += texture2D(mainGround_road, diag_topL2_2 - offsetFactor);
+      				*/
+
+
+
+
+
+      			//	mainGroundTex += texture2D(mainGround_road, diag_bot - offsetFactor);
+      			//mainGroundTex += texture2D(mainGround_road, diag_topLeft - offsetFactor);
+
+
+
+
+
+
+      			//shaman halo
+      			//vec2 mp = vec2(minionPos.x - thisP.x, minionPos.z + thisP.y);
+      			vec2 mp = vec2(thisP.x, thisP.y);
+      			float clc = circle(mp,125.0);
+      			vec4 shamanHalo = mainGroundTex - mainGroundTex * clc;
+
+      			//fallens halo
+      			vec4 fallensHalo = vec4(0.0, 0.0, 0.0, 0.0);
+      			for (int i = 0; i < NOMBREMAXDEFALLENS; i++) {
+      				if (i >= nbOfFallens) { break; }
+      				vec2 pi = vec2(fallensPos[i].x - (minionPos.x + thisP.x), fallensPos[i].z - (minionPos.z - thisP.y));
+      				float clci = circle(pi, 35.0);
+      				fallensHalo += mainGroundTex - mainGroundTex * clci;
+      			}
+
+      			//gl_FragColor = shamanHalo;
+      			gl_FragColor = shamanHalo + fallensHalo / 10.0;
+      			//gl_FragColor = mainGroundTex;
+
+      			//(vuv*qqchose / offsetfactor) -vec2(qquechose);
+      			vec2 p = vec2(vUv.x/3.0, vUv.y/3.0);
+      			/*
+      							  if ( pointIsInTriangle(p, vec2(-0.02, 0.5), vec2(-0.02,1.02), vec2(0.5,1.02))) { discard; }
+      							  if ( pointIsInTriangle(p, vec2(0.5, 1.02), vec2(1.02,1.02), vec2(1.02,0.5))) { discard; }
+      							  if ( pointIsInTriangle(p, vec2(1.02, 0.5), vec2(1.02,-0.02), vec2(0.5,-0.02))) { discard; }
+      							  if ( pointIsInTriangle(p, vec2(-0.02, 0.0), vec2(-0.02,0.5), vec2(0.5,-0.02))) { discard; }
+
+      							  if (gl_FragColor.a < 0.1) { discard; }
+
+      */
+      			}
+    </script>
+    <script type="module">
+      //imports
+      import Fallen from "./js/classes/Fallen.js";
+      import Shaman from "./js/classes/Shaman.js";
+      import Ground from "./js/classes/Ground.js";
+      import Enemy from "./js/classes/Enemy.js";
+
+      //selectors
+      var tLifebar = document.getElementById("tLifebar"),
+        tHp = document.getElementById("tHp"),
+        tName = document.getElementById("tName");
+
+      //globals
+      var fallens = [];
+      var structures = [];
+      var mouse = new THREE.Vector2(),
+        raycaster = new THREE.Raycaster(),
+        cube,
+        ground,
+        fln;
+      var fpsLimiter = 0,
+        animSpeed = 3,
+        shamAnimSpeed = 3; //the higher animspeed the slowest
+      var mouseIsHeldDown = false;
+
+      //webgl setup - scene, lights, renderer
+      var scene = new THREE.Scene();
+      var camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        1,
+        300,
+      );
+      scene.add(camera);
+      var light = new THREE.PointLight(0xffffff, 1, 200);
+      light.castShadow = true;
+      scene.add(light);
+      var dLight = new THREE.DirectionalLight(0xffffff, 1);
+      scene.add(dLight);
+
+      var renderer = new THREE.WebGLRenderer();
+      renderer.setClearColor(0x000000);
+      renderer.setPixelRatio(1);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap; // default THREE.PCFShadowMap
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      //debugg box
+      let cg = new THREE.BoxGeometry(5, 5, 5);
+      cg.translate(0, 2.5, 0);
+      cube = new THREE.Mesh(
+        cg,
+        new THREE.MeshBasicMaterial({ color: 0x0000ff }),
+      );
+      scene.add(cube);
+      cube.visible = false;
+      var cubeDestination = new THREE.Vector3(0, 0, 0);
+
+      //add structures
+      for (var i = 0; i < 10; i++) {
+        var mechant = new Enemy(30, scene);
+        mechant.position.z = -30;
+        mechant.position.x = 90 + -35 * i;
+        mechant.rotation.y = Math.PI / 3;
+        mechant.renderOrder = 0;
+        mechant.name = "Gold ore";
+        mechant.fallAppart();
+        scene.add(mechant);
+        structures.push(mechant);
+      }
+
+      for (var i = 0; i < 10; i++) {
+        var mechant = new Enemy(30, scene);
+        mechant.position.z = -60;
+        mechant.position.x = 90 + -35 * i - 15;
+        mechant.rotation.y = Math.PI / 3;
+        mechant.renderOrder = 0;
+        mechant.name = "Gold ore";
+        mechant.fallAppart();
+        scene.add(mechant);
+        structures.push(mechant);
+      }
+
+      for (var i = 0; i < 10; i++) {
+        var mechant = new Enemy(30, scene);
+        mechant.position.z = -90;
+        mechant.position.x = 90 + -35 * i - 15;
+        mechant.rotation.y = Math.PI / 3;
+        mechant.renderOrder = 0;
+        mechant.name = "Gold ore";
+        mechant.fallAppart();
+        scene.add(mechant);
+        structures.push(mechant);
+      }
+
+      function updateStructureSeeThrough() {
+        let cPos = new THREE.Vector3(camera.position.x, 0, camera.position.z);
+        let heroDist = new THREE.Vector3()
+          .copy(shaman.position)
+          .distanceTo(cPos);
+
+        structures.forEach((structure) => {
+          let strucDist = new THREE.Vector3()
+            .copy(structure.position)
+            .distanceTo(cPos);
+          if (heroDist >= strucDist - 22) {
+            ///let alpha = 1.3 - Math.min(Math.max(heroDist, 0.3), 1.0);
+            //structure.material.opacity = alpha;
+            structure.renderOrder = 4;
+          } else if (heroDist < strucDist - 22) {
+            //structure.material.opacity = 1;
+            structure.renderOrder = 0;
+          }
+
+          var diff = heroDist - (strucDist - 30);
+          let alpha = 10.15 - Math.min(Math.max(diff, 0.15), 10.0);
+          structure.material.opacity = alpha / 10.0 + 0.15;
+        });
+      }
+
+      //debug circle position
+      /*
+			let nbOfStones = 20;
+			var stones = [];
+			for (var i = 0 ; i < nbOfStones; i++) {
+				let cg = new THREE.BoxGeometry(2,2,2);
+				let c = new THREE.Mesh(cg, new THREE.MeshBasicMaterial({color:0x0000FF}));
+				let angle = ((360/nbOfStones) * i) * (Math.PI/180);
+				let r = 15;
+				let x = 0 + r * Math.cos(angle);
+				let z = 0 + r *  Math.sin(angle);
+				c.position.set(x, 0, z);
+				scene.add(c);
+				stones.push(c);
+			}
+
+			function makeWobble(items) {
+				
+				for (var i = 0 ; i < items.length; i++) {
+					let y = items[i].position.x;
+					let newY = Math.sin((Math.PI*2 * i/stones.length) + fpsLimiter / 5);
+					items[i].position.y = newY;
+				}
+			}
+			*/
+
+      //ADD SHAMAN
+      var shaman = new Shaman(1, 0, 0, 25);
+      shaman.geometry.translate(0, shaman.scl / 2, 0);
+      shaman.fleshOut();
+      shaman.name = "shaman";
+      scene.add(shaman);
+      camera.lookAt(new THREE.Vector3(0, 0, 0));
+      shaman.update(camera);
+
+      //ATTACK BIND
+      document.body.onkeyup = function (e) {
+        if (e.keyCode == 32) {
+          console.log("CANIF!");
+          shaman.attack();
+        }
+      };
+
+      //RESURECT BIND
+      document.body.onkeyup = function (e) {
+        if (e.keyCode == 68) {
+          console.log("RAIIIIIDE, FALLENS !");
+          fallens.forEach((fallen) => {
+            fallen.resurect();
+          });
+        }
+      };
+
+      function makeShadow(character) {
+        //PLANE TEST
+        let p_geo = new THREE.PlaneGeometry(25, 25, 1);
+        //let p_mat = new THREE.MeshBasicMaterial({color:0x000000, side:THREE.DoubleSide});
+        let p_mat = character.material;
+        //p_mat.color.set(0,0,0);
+        let sha = new THREE.Mesh(p_geo, p_mat);
+        sha.name = "shadow";
+        scene.add(sha);
+        //sha.position.z = -100
+        sha.scale.y *= 0.95;
+        if (character.name == "shaman") {
+          sha.geometry.translate(0, character.scl / 2, 0); //OK FOR SHAMAN
+        } else if (character.name == "fallen") {
+          sha.geometry.translate(character.scl / 20, character.scl / 5, 0);
+        }
+        sha.geometry.rotateY(Math.PI);
+        sha.geometry.rotateX(Math.PI * 1.5);
+        sha.geometry.rotateZ(Math.PI);
+        p_mat = character.material;
+        p_mat.needsUpdate = true;
+
+        character.shadow = sha;
+        character.shadow.renderOrder = 1;
+        character.renderOrder = 2;
+
+        let v = p_geo;
+        sha.geometry.faces[0].color.set(0, 0, 0);
+        sha.geometry.faces[1].color.set(0, 0, 0);
+        sha.geometry.vertices[0].x -=
+          Math.abs(sha.geometry.vertices[0].x) * 2.5;
+        //sha.geometry.vertices[0].y *= 0.5;
+        sha.geometry.vertices[1].x -=
+          Math.abs(sha.geometry.vertices[1].x) * 0.5;
+        //sha.geometry.vertices[1].y *= 0.5;
+      }
+
+      makeShadow(shaman);
+
+      //ADD GROUND and SHADOW MATERIAL
+      //ground = new THREE.Mesh(new THREE.PlaneGeometry(250,250,1), new THREE.MeshLambertMaterial({color:new THREE.Color("rgb(75, 75, 75)")}));
+      var vertShader = document.getElementById("vertexShader").innerHTML;
+      var fragShader = document.getElementById("fragmentShader").innerHTML;
+      var ground = new Ground(64 * 5, 64 * 5, vertShader, fragShader);
+      ground.name = "ground";
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.31;
+      ground.scale.set(1.1, 1.1, 1.1);
+      ground.setUVs(64 * 4, 64 * 4);
+      scene.add(ground); // CE GROUND EST RETIRE CAR IL N'EST PAS POSITIONNE PAR RAPPORT A SON SCALE, léger seams visibles...
+
+      var groundFog_fake = new THREE.Mesh(
+        new THREE.PlaneGeometry(10000, 10000),
+        new THREE.MeshBasicMaterial({
+          color: 0x000000,
+          side: THREE.DoubleSide,
+        }),
+      );
+      groundFog_fake.rotation.x = Math.PI / 2;
+      groundFog_fake.position.y = -0.35;
+      scene.add(groundFog_fake);
+
+      //Shadow material
+      var planeGeometry = new THREE.PlaneGeometry(64 * 5, 64 * 5);
+      planeGeometry.rotateX(-Math.PI / 2);
+
+      var planeMaterial = new THREE.ShadowMaterial();
+      planeMaterial.opacity = 0.35;
+
+      var plane = new THREE.Mesh(planeGeometry, planeMaterial);
+      //plane.position.y = -200;
+      plane.position.y = -0.3;
+      plane.receiveShadow = true;
+      scene.add(plane);
+
+      //ADD FALLENS
+      var weaponList = ["axe", "sabre", "torch", "club"];
+      var shieldsList = ["buckler"];
+      var nbOfFallens = 10;
+      ground.material.uniforms.nbOfFallens.value = nbOfFallens;
+      for (let i = 0; i < nbOfFallens; i++) {
+        let equipment = { weapon: null, shield: null };
+        let name = Math.random();
+        let randonWeapon =
+          weaponList[Math.floor(Math.random() * weaponList.length)];
+        equipment.weapon = randonWeapon;
+        let rShield = Math.random();
+        equipment.shield = rShield > 0.5 ? shieldsList[0] : null;
+        let fln = new Fallen(1, 0, 0, 40, shaman, name, equipment);
+        fln.name = "fallen";
+        fln.geometry.translate(0, fln.scl / 4, 0);
+        fln.add(fln.hitbox.meshObject());
+        fln.fleshOut();
+        fln.position.set(Math.random() * 20, 0, Math.random() * 20);
+        scene.add(fln);
+        fallens.push(fln);
+        makeShadow(fln);
+      }
+
+      fallens.forEach((fallen) => {
+        fallen.herd = fallens;
+      });
+
+      var animate = function () {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+
+        fallens.forEach((fallen, key) => {
+          if (fpsLimiter % animSpeed == 0) {
+            fallen.animae();
+          }
+          fallen.run();
+          fallen.update(camera);
+          fallen.material.uniforms.masterPos.value = new THREE.Vector3().copy(
+            shaman.position,
+          );
+          ground.material.uniforms.fallensPos.value[key] =
+            new THREE.Vector3().copy(fallen.position);
+        });
+
+        structures.forEach((s) => {
+          if (s.isUnderAttack == true) {
+            s.animateParticles(s.particles);
+            s.animateParticles(s.core);
+          }
+          if (fpsLimiter % animSpeed == 0) {
+            s.blockPath(fallens);
+            if (s.stats.wasSelected == true) s.material.map.offset.y += 0.01;
+          }
+        });
+
+        var oldShamPos = new THREE.Vector3().copy(shaman.position);
+        if (fpsLimiter % shamAnimSpeed == 0) {
+          shaman.animae();
+        }
+        shaman.run();
+        ground.position.x = shaman.position.x;
+        ground.position.z = shaman.position.z - 50;
+
+        ground.updateGroundMap(shaman.position);
+        //	console.log(shaman.position);
+        //fln.update(camera);
+        shaman.update(camera);
+        fpsLimiter++;
+
+        //update life status (TODO : refactor)
+        if (mechant.isDead) {
+          fallens.forEach((fallen) => {
+            mechant.isUnderAttack = false;
+          });
+        }
+
+        //Highlight and selection
+        updateMousePos();
+        hightlight();
+
+        //camera and visibility
+        updateStructureSeeThrough();
+        light.position.x = shaman.position.x;
+        light.position.y = 10;
+        light.position.z = shaman.position.z;
+
+        //giberish
+        //makeWobble(stones);
+
+        ground.material.uniforms.minionPos.value = new THREE.Vector3().copy(
+          shaman.position,
+        );
+        ground.material.uniforms.needUpdate = true;
+      };
+
+      document.addEventListener("mousedown", toggleHold, false);
+      document.addEventListener("mouseup", toggleHold, false);
+      document.addEventListener("mousemove", runTo, false);
+      document.addEventListener("mousemove", updateMousePos);
+      document.addEventListener("mousedown", mineThis);
+
+      function toggleHold(e) {
+        mouseIsHeldDown = e.type == "mousedown" ? true : false;
+        if (mouseIsHeldDown) {
+          var intersects = raycaster.intersectObjects(scene.children);
+          var isTargettingEnemy = intersects.find((killable) => {
+            return killable.object.name == "Gold ore";
+          });
+
+          if (typeof isTargettingEnemy !== "object") {
+            for (var i = 0; i < intersects.length; i++) {
+              let p = intersects[0].point;
+              shaman.moveTarget = new THREE.Vector3(p.x, shaman.y, p.z);
+              shaman.updateSpriteWalk();
+              shaman.isMoving = true;
+
+              cubeDestination = p;
+            }
+          }
+        }
+      }
+
+      function runTo(event) {
+        if (mouseIsHeldDown) {
+          var intersects = raycaster.intersectObjects(scene.children);
+          var isTargettingEnemy = intersects.find((killable) => {
+            return killable.object.name == "Gold ore";
+          });
+          if (typeof isTargettingEnemy !== "object") {
+            for (var i = 0; i < intersects.length; i++) {
+              let p = intersects[0].point;
+              shaman.moveTarget = new THREE.Vector3(p.x, shaman.y, p.z);
+              shaman.updateSpriteWalk();
+              shaman.isMoving = true;
+
+              cubeDestination = p;
+            }
+          }
+        }
+      }
+
+      function updateMousePos() {
+        // calculate mouse position in normalized device coordinates
+        // (-1 to +1) for both components
+        mouse.x =
+          event !== undefined
+            ? (event.clientX / window.innerWidth) * 2 - 1
+            : mouse.x;
+        mouse.y =
+          event !== undefined
+            ? -(event.clientY / window.innerHeight) * 2 + 1
+            : mouse.y;
+        // update the picking ray with the camera and mouse position
+        raycaster.setFromCamera(mouse, camera);
+      }
+
+      function mineThis() {
+        var intersects = raycaster.intersectObjects(structures);
+        if (intersects.length > 0) {
+          intersects[0].object.queueDestruction();
+
+          fallens.forEach((fallen) => {
+            if (
+              fallen.combat.targetList.includes(intersects[0].object) == true
+            ) {
+              const updatedList = fallen.combat.targetList.filter(
+                (item) => item !== intersects[0].object,
+              );
+              fallen.combat.targetList = updatedList;
+
+              console.log(fallen.combat.targetList);
+            } else {
+              fallen.combat.targetList.push(intersects[0].object);
+              console.log(fallen.combat.targetList);
+            }
+            fallen.attack();
+          });
+        }
+      }
+
+      function hightlight() {
+        fallens.forEach((fallen) => {
+          fallen.material.uniforms.isSelected.value = false;
+        });
+        fallens.forEach((fallen) => {
+          // calculate objects intersecting the picking ray
+          var intersects = raycaster.intersectObjects(fallen.children);
+          for (var i = 0; i < intersects.length; i++) {
+            let object = intersects[i].object.name;
+            //console.log(object)
+            let p = intersects[0].point;
+            cube.position.set(p.x, shaman.position.y, p.z);
+
+            fallen.material.uniforms.isSelected.value = true;
+
+            tLifebar.style.opacity = 1;
+            tName.innerHTML = fallen.name;
+            let currentHp = fallen.stats.hp.current / fallen.stats.hp.max;
+            tHp.style.width = currentHp * 100 + "%";
+          }
+          if (intersects.length < 1) {
+            setTimeout(function () {
+              tLifebar.style.opacity = 0;
+            }, 1);
+          }
+        });
+
+        //raycast structures
+        // calculate objects intersecting the picking ray
+        var intersects = raycaster.intersectObjects(structures);
+        for (var i = 0; i < intersects.length; i++) {
+          let object = intersects[i].object;
+
+          tLifebar.style.opacity = 1;
+          //tName.innerHTML = object.name;
+          tName.innerHTML = "Sandstone";
+          let currentHp = object.stats.hp.current / object.stats.hp.max;
+          tHp.style.width = currentHp * 100 + "%";
+
+          return { target: object };
+        }
+
+        if (intersects.length < 1) {
+          setTimeout(function () {
+            tLifebar.style.opacity = 0;
+          }, 1);
+        }
+      }
+
+      //////////////////////////////////////
+      /////UNUSED OR FOR DEBUG PURPOSE//////
+      //////////////////////////////////////
+
+      function makeMove(item, target) {
+        let d = item.position.distanceTo(target);
+        if (d > 0.5) {
+          let desired = new THREE.Vector3().subVectors(target, item.position);
+          desired.normalize();
+          desired.multiplyScalar(0.7);
+          item.position.add(desired);
+        }
+      }
+
+      animate();
+    </script>
+  </body>
+</html>
